@@ -6,7 +6,7 @@
         <string>com.gluster.glusterd</string>
         <key>ProgramArguments</key>
         <array>
-                <string>/usr/local/sbin/glusterd</string>
+                <string>/usr/sbin/glusterd</string>
                 <string>-N</string>
         </array>
 </dict>

@@ -15,7 +15,7 @@
 . /etc/rc.status
 
 BASE=glusterd
-GLUSTERD_BIN=/usr/local/sbin/$BASE
+GLUSTERD_BIN=/usr/sbin/$BASE
 GLUSTERD_OPTS=""
 GLUSTERD="$GLUSTERD_BIN $GLUSTERD_OPTS"
 RETVAL=0
