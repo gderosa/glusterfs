@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          glusterfs-server
 # Required-Start:    $local_fs $remote_fs $network
@@ -41,7 +41,30 @@ do_start()
       log_success_msg "glusterd service is already running with pid $PID"
     else
       log_daemon_msg "Starting glusterd service" "glusterd"
-      start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --startas $DAEMON -- -p $PIDFILE $GLUSTERD_OPTS
+
+      # As it is well known, this script runs *after* network configuration.
+      #
+      # Anyway, if network interfaces are configured via DHCP reservation,
+      # the process is asynchronous, which might be unfortunate in this
+      # case. Local IP addresses (not loopback) might be still
+      # unavailable at this stage and glusterd may fail to start. 
+      #
+      # A simple, general retry mechanism might be useful then.
+      
+      attempts=0; maxattempts=10; interval=1
+
+      retry=1
+      while [ "x$retry" = "x1" ]; do
+	      attempts=$((attempts+1))
+	      start-stop-daemon --start --pidfile $PIDFILE --startas $DAEMON -- -p $PIDFILE $GLUSTERD_OPTS && \
+		      retry=0 || \
+		      (echo -n "." && sleep $interval)
+	      if test $attempts -ge $maxattempts; then
+		      retry=0
+		      false
+	      fi
+      done
+
       log_end_msg $?
     fi
 }
