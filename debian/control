@@ -15,7 +15,9 @@ Build-Depends: debhelper (>= 9),
  libncurses5-dev,
  libssl-dev,
  python-all-dev (>= 2.6.6-3~),
- hardening-wrapper
+ hardening-wrapper,
+ libtool,
+ pkg-config
 Standards-Version: 3.9.4
 Homepage: http://www.gluster.org/
 
