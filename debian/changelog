@@ -1,3 +1,9 @@
+glusterfs (3.4.0beta2-1) testing; urgency=low
+
+  * New upstream beta release.
+
+ -- Guido De Rosa <guido.derosa@vemarsas.it>  Tue, 28 May 2013 23:48:26 +0200
+
 glusterfs (3.4.0~qa9realyalpha2-1) experimental; urgency=low
 
   * New upstream alpha release.
