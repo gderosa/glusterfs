@@ -269,6 +269,8 @@ struct glusterd_volinfo_ {
         int                     sub_count;  /* backward compatibility */
         int                     stripe_count;
         int                     replica_count;
+        int                     subvol_count; /* Number of subvolumes in a
+                                                 distribute volume */
         int                     dist_leaf_count; /* Number of bricks in one
                                                     distribute subvolume */
         int                     port;
@@ -300,6 +302,9 @@ struct glusterd_volinfo_ {
 
         gf_boolean_t             memory_accounting;
         glusterd_vol_backend_t   backend;
+
+        int                      op_version;
+        int                      client_op_version;
 };
 
 typedef enum gd_node_type_ {

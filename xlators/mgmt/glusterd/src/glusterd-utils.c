@@ -1011,12 +1011,15 @@ glusterd_friend_cleanup (glusterd_peerinfo_t *peerinfo)
         GF_ASSERT (peerinfo);
         glusterd_peerctx_t      *peerctx = NULL;
         gf_boolean_t            quorum_action = _gf_false;
+        glusterd_conf_t         *priv = THIS->private;
 
         if (peerinfo->quorum_contrib != QUORUM_NONE)
                 quorum_action = _gf_true;
         if (peerinfo->rpc) {
                 /* cleanup the saved-frames before last unref */
+                synclock_unlock (&priv->big_lock);
                 rpc_clnt_connection_cleanup (&peerinfo->rpc->conn);
+                synclock_lock (&priv->big_lock);
 
                 peerctx = peerinfo->rpc->mydata;
                 peerinfo->rpc->mydata = NULL;
@@ -1032,6 +1035,32 @@ glusterd_friend_cleanup (glusterd_peerinfo_t *peerinfo)
         if (quorum_action)
                 glusterd_do_quorum_action ();
         return 0;
+}
+
+int
+glusterd_volinfo_find_by_volume_id (uuid_t volume_id, glusterd_volinfo_t **volinfo)
+{
+        int32_t                 ret = -1;
+        xlator_t                *this = NULL;
+        glusterd_volinfo_t      *voliter = NULL;
+        glusterd_conf_t         *priv = NULL;
+
+        if (!volume_id)
+                return -1;
+
+        this = THIS;
+        priv = this->private;
+
+        list_for_each_entry (voliter, &priv->volumes, vol_list) {
+                if (uuid_compare (volume_id, voliter->volume_id))
+                        continue;
+                *volinfo = voliter;
+                ret = 0;
+                gf_log (this->name, GF_LOG_DEBUG, "Volume %s found",
+                        voliter->volname);
+                break;
+        }
+        return ret;
 }
 
 int32_t
@@ -1206,6 +1235,8 @@ glusterd_brick_connect (glusterd_volinfo_t  *volinfo,
 {
         int                     ret = 0;
         char                    socketpath[PATH_MAX] = {0};
+        char                    volume_id_str[64];
+        char                    *brickid = NULL;
         dict_t                  *options = NULL;
         struct rpc_clnt         *rpc = NULL;
         glusterd_conf_t         *priv = THIS->private;
@@ -1227,10 +1258,17 @@ glusterd_brick_connect (glusterd_volinfo_t  *volinfo,
                                                              socketpath, 600);
                 if (ret)
                         goto out;
+
+                uuid_utoa_r (volinfo->volume_id, volume_id_str);
+                ret = gf_asprintf (&brickid, "%s:%s:%s", volume_id_str,
+                                   brickinfo->hostname, brickinfo->path);
+                if (ret < 0)
+                        goto out;
+
                 synclock_unlock (&priv->big_lock);
                 ret = glusterd_rpc_create (&rpc, options,
                                            glusterd_brick_rpc_notify,
-                                           brickinfo);
+                                           brickid);
                 synclock_lock (&priv->big_lock);
                 if (ret)
                         goto out;
@@ -1461,15 +1499,21 @@ glusterd_brick_unlink_socket_file (glusterd_volinfo_t *volinfo,
 int32_t
 glusterd_brick_disconnect (glusterd_brickinfo_t *brickinfo)
 {
+        rpc_clnt_t              *rpc = NULL;
+
         GF_ASSERT (brickinfo);
 
-        if (brickinfo->rpc) {
-                /* cleanup the saved-frames before last unref */
-                rpc_clnt_connection_cleanup (&brickinfo->rpc->conn);
-
-                rpc_clnt_unref (brickinfo->rpc);
-                brickinfo->rpc = NULL;
+        if (!brickinfo) {
+                gf_log_callingfn ("glusterd", GF_LOG_WARNING, "!brickinfo");
+                return -1;
         }
+
+        rpc            = brickinfo->rpc;
+        brickinfo->rpc = NULL;
+
+        if (rpc)
+                rpc_clnt_unref (rpc);
+
         return 0;
 }
 
@@ -3016,6 +3060,8 @@ glusterd_import_friend_volume (dict_t *vols, size_t count)
         if (ret)
                 goto out;
 
+        gd_update_volume_op_versions (new_volinfo);
+
         list_add_tail (&new_volinfo->vol_list, &priv->volumes);
 out:
         gf_log ("", GF_LOG_DEBUG, "Returning with ret: %d", ret);
@@ -3438,12 +3484,10 @@ glusterd_nodesvc_disconnect (char *server)
         struct rpc_clnt         *rpc = NULL;
 
         rpc = glusterd_nodesvc_get_rpc (server);
+        (void)glusterd_nodesvc_set_rpc (server, NULL);
 
-        if (rpc) {
-                rpc_clnt_connection_cleanup (&rpc->conn);
+        if (rpc)
                 rpc_clnt_unref (rpc);
-                (void)glusterd_nodesvc_set_rpc (server, NULL);
-        }
 
         return 0;
 }
@@ -4120,6 +4164,15 @@ glusterd_restart_gsyncds (glusterd_conf_t *conf)
                 glusterd_volume_restart_gsyncds (volinfo);
         }
         return ret;
+}
+
+inline int
+glusterd_get_dist_leaf_count (glusterd_volinfo_t *volinfo)
+{
+    int rcount = volinfo->replica_count;
+    int scount = volinfo->stripe_count;
+
+    return (rcount ? rcount : 1) * (scount ? scount : 1);
 }
 
 int
@@ -7470,4 +7523,77 @@ out:
         }
         return ret;
 
+}
+
+int
+_update_volume_op_versions (dict_t *this, char *key, data_t *value, void *data)
+{
+        int                op_version = 0;
+        glusterd_volinfo_t *ctx       = NULL;
+        gf_boolean_t       enabled    = _gf_true;
+        int                ret        = -1;
+
+        GF_ASSERT (data);
+        ctx = data;
+
+        op_version = glusterd_get_op_version_for_key (key);
+
+        if (gd_is_xlator_option (key) || gd_is_boolean_option (key)) {
+                ret = gf_string2boolean (value->data, &enabled);
+                if (ret)
+                        return 0;
+
+                if (!enabled)
+                        return 0;
+        }
+
+        if (op_version > ctx->op_version)
+                ctx->op_version = op_version;
+
+        if (gd_is_client_option (key) &&
+            (op_version > ctx->client_op_version))
+                ctx->client_op_version = op_version;
+
+        return 0;
+}
+
+void
+gd_update_volume_op_versions (glusterd_volinfo_t *volinfo)
+{
+        glusterd_conf_t *conf = NULL;
+        gf_boolean_t    ob_enabled = _gf_false;
+
+        GF_ASSERT (volinfo);
+
+        conf = THIS->private;
+        GF_ASSERT (conf);
+
+        /* Reset op-versions to minimum */
+        volinfo->op_version = 1;
+        volinfo->client_op_version = 1;
+
+        dict_foreach (volinfo->dict, _update_volume_op_versions, volinfo);
+
+        /* Special case for open-behind
+         * If cluster op-version >= 2 and open-behind hasn't been explicitly
+         * disabled, volume op-versions must be updated to account for it
+         */
+
+        /* TODO: Remove once we have a general way to update automatically
+         * enabled features
+         */
+        if (conf->op_version >= 2) {
+                ob_enabled = dict_get_str_boolean (volinfo->dict,
+                                                   "performance.open-behind",
+                                                   _gf_true);
+                if (ob_enabled) {
+
+                        if (volinfo->op_version < 2)
+                                volinfo->op_version = 2;
+                        if (volinfo->client_op_version < 2)
+                                volinfo->client_op_version = 2;
+                }
+        }
+
+        return;
 }

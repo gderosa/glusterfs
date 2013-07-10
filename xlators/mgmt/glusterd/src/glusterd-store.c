@@ -1739,11 +1739,29 @@ glusterd_restore_op_version (xlator_t *this)
                 goto out;
         }
 
-        gf_log (this->name, GF_LOG_INFO, "op-version not found in store, "
-                "setting it to minimum op-version : %d", GD_OP_VERSION_MIN);
-
-        /* If op-version is missing, set it to  GD_OP_VERSION_MIN */
-        conf->op_version = GD_OP_VERSION_MIN;
+        /* op-version can be missing from the store file in 2 cases,
+         * 1. This is a new install of glusterfs
+         * 2. This is an upgrade of glusterfs from a version without op-version
+         *    to a version with op-version (eg. 3.3 -> 3.4)
+         *
+         * Detection of a new install or an upgrade from an older install can be
+         * done by checking for the presence of the its peer-id in the store
+         * file.  If peer-id is present, the installation is an upgrade else, it
+         * is a new install.
+         *
+         * For case 1, set op-version to GD_OP_VERSION_MAX.
+         * For case 2, set op-version to GD_OP_VERSION_MIN.
+         */
+        ret = glusterd_retrieve_uuid();
+        if (ret) {
+                gf_log (this->name, GF_LOG_INFO, "Detected new install. Setting"
+                        " op-version to maximum : %d", GD_OP_VERSION_MAX);
+                conf->op_version = GD_OP_VERSION_MAX;
+        } else {
+                gf_log (this->name, GF_LOG_INFO, "Upgrade detected. Setting"
+                        " op-version to minimum : %d", GD_OP_VERSION_MIN);
+                conf->op_version = GD_OP_VERSION_MIN;
+        }
         ret = 0;
 out:
         return ret;
@@ -2530,8 +2548,11 @@ glusterd_store_retrieve_volume (char    *volname)
                         break;
                 }
 
-                volinfo->dist_leaf_count = (volinfo->stripe_count *
-                                            volinfo->replica_count);
+                volinfo->dist_leaf_count = glusterd_get_dist_leaf_count (volinfo);
+
+                volinfo->subvol_count = (volinfo->brick_count /
+                                         volinfo->dist_leaf_count);
+
         }
 
         if (op_errno != GD_STORE_EOF)
@@ -2549,6 +2570,8 @@ glusterd_store_retrieve_volume (char    *volname)
         ret = glusterd_volume_compute_cksum (volinfo);
         if (ret)
                 goto out;
+
+        gd_update_volume_op_versions (volinfo);
 
         list_add_tail (&volinfo->vol_list, &priv->volumes);
 

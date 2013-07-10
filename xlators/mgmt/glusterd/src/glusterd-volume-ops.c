@@ -1549,8 +1549,12 @@ glusterd_op_create_volume (dict_t *dict, char **op_errstr)
 
         /* dist-leaf-count is the count of brick nodes for a given
            subvolume of distribute */
-        volinfo->dist_leaf_count = (volinfo->stripe_count *
-                                    volinfo->replica_count);
+        volinfo->dist_leaf_count = glusterd_get_dist_leaf_count (volinfo);
+
+        /* subvol_count is the count of number of subvolumes present
+           for a given distribute volume */
+        volinfo->subvol_count = (volinfo->brick_count /
+                                 volinfo->dist_leaf_count);
 
         /* Keep sub-count same as earlier, for the sake of backward
            compatibility */
@@ -1646,6 +1650,8 @@ glusterd_op_create_volume (dict_t *dict, char **op_errstr)
         volinfo->rebal.defrag_status = 0;
         list_add_tail (&volinfo->vol_list, &priv->volumes);
         vol_added = _gf_true;
+
+        gd_update_volume_op_versions (volinfo);
 out:
         GF_FREE(free_ptr);
         if (!vol_added && volinfo)

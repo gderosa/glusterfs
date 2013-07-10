@@ -301,6 +301,9 @@ int glfs_close (glfs_fd_t *fd);
 
 glfs_t *glfs_from_glfd (glfs_fd_t *fd);
 
+int glfs_set_xlator_option (glfs_t *fs, const char *xlator, const char *key,
+			    const char *value);
+
 typedef void (*glfs_io_cbk) (glfs_fd_t *fd, ssize_t ret, void *data);
 
 // glfs_{read,write}[_async]
@@ -387,6 +390,9 @@ glfs_fd_t *glfs_opendir (glfs_t *fs, const char *path);
 int glfs_readdir_r (glfs_fd_t *fd, struct dirent *dirent,
 		    struct dirent **result);
 
+int glfs_readdirplus_r (glfs_fd_t *fd, struct stat *stat, struct dirent *dirent,
+			struct dirent **result);
+
 long glfs_telldir (glfs_fd_t *fd);
 
 void glfs_seekdir (glfs_fd_t *fd, long offset);
@@ -441,6 +447,21 @@ int glfs_removexattr (glfs_t *fs, const char *path, const char *name);
 int glfs_lremovexattr (glfs_t *fs, const char *path, const char *name);
 
 int glfs_fremovexattr (glfs_fd_t *fd, const char *name);
+
+char *glfs_getcwd (glfs_t *fs, char *buf, size_t size);
+
+int glfs_chdir (glfs_t *fs, const char *path);
+
+int glfs_fchdir (glfs_fd_t *fd);
+
+char *glfs_realpath (glfs_t *fs, const char *path, char *resolved_path);
+
+/*
+ * @cmd and @flock are as specified in man fcntl(2).
+ */
+int glfs_posix_lock (glfs_fd_t *fd, int cmd, struct flock *flock);
+
+glfs_fd_t *glfs_dup (glfs_fd_t *fd);
 
 __END_DECLS
 

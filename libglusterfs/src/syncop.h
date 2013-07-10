@@ -129,6 +129,7 @@ struct syncargs {
         struct iobref      *iobref;
         char               *buffer;
         dict_t             *xdata;
+	struct gf_flock     flock;
 
         /* some more _cbk needs */
         uuid_t              uuid;
@@ -196,7 +197,7 @@ struct syncargs {
                 if (task)                                               \
                         frame = task->opframe;                          \
                 else                                                    \
-                        frame = create_frame (THIS, THIS->ctx->pool);   \
+                        frame = syncop_create_frame (THIS);		\
                 if (task) {                                             \
                         frame->root->uid = task->uid;                   \
                         frame->root->gid = task->gid;                   \
@@ -233,6 +234,23 @@ void synctask_waitfor (struct synctask *task, int count);
 int synctask_setid (struct synctask *task, uid_t uid, gid_t gid);
 #define SYNCTASK_SETID(uid, gid) synctask_setid (synctask_get(), uid, gid);
 
+
+static inline call_frame_t *
+syncop_create_frame (xlator_t *this)
+{
+	call_frame_t  *frame = NULL;
+
+	frame = create_frame (this, this->ctx->pool);
+	if (!frame)
+		return NULL;
+
+	frame->root->pid = getpid();
+	frame->root->uid = geteuid ();
+	frame->root->gid = getegid ();
+        frame->root->ngrps = getgroups (GF_MAX_AUX_GROUPS, frame->root->groups);
+
+	return frame;
+}
 
 int synclock_init (synclock_t *lock);
 int synclock_destory (synclock_t *lock);
@@ -279,7 +297,7 @@ int syncop_removexattr (xlator_t *subvol, loc_t *loc, const char *name);
 int syncop_fremovexattr (xlator_t *subvol, fd_t *fd, const char *name);
 
 int syncop_create (xlator_t *subvol, loc_t *loc, int32_t flags, mode_t mode,
-                   fd_t *fd, dict_t *dict);
+                   fd_t *fd, dict_t *dict, struct iatt *iatt);
 int syncop_open (xlator_t *subvol, loc_t *loc, int32_t flags, fd_t *fd);
 int syncop_close (fd_t *fd);
 
@@ -305,15 +323,18 @@ int syncop_fstat (xlator_t *subvol, fd_t *fd, struct iatt *stbuf);
 int syncop_stat (xlator_t *subvol, loc_t *loc, struct iatt *stbuf);
 
 int syncop_symlink (xlator_t *subvol, loc_t *loc, const char *newpath,
-                    dict_t *dict);
+                    dict_t *dict, struct iatt *iatt);
 int syncop_readlink (xlator_t *subvol, loc_t *loc, char **buffer, size_t size);
 int syncop_mknod (xlator_t *subvol, loc_t *loc, mode_t mode, dev_t rdev,
-                  dict_t *dict);
-int syncop_mkdir (xlator_t *subvol, loc_t *loc, mode_t mode, dict_t *dict);
+                  dict_t *dict, struct iatt *iatt);
+int syncop_mkdir (xlator_t *subvol, loc_t *loc, mode_t mode, dict_t *dict,
+		  struct iatt *iatt);
 int syncop_link (xlator_t *subvol, loc_t *oldloc, loc_t *newloc);
 int syncop_fsyncdir (xlator_t *subvol, fd_t *fd, int datasync);
 int syncop_access (xlator_t *subvol, loc_t *loc, int32_t mask);
 
 int syncop_rename (xlator_t *subvol, loc_t *oldloc, loc_t *newloc);
+
+int syncop_lk (xlator_t *subvol, fd_t *fd, int cmd, struct gf_flock *flock);
 
 #endif /* _SYNCOP_H */

@@ -802,6 +802,8 @@ entry_copy (gf_dirent_t *source)
         sink->d_type = source->d_type;
         sink->d_stat = source->d_stat;
 
+	if (source->inode)
+		sink->inode = inode_ref (source->inode);
         return sink;
 }
 
@@ -1431,6 +1433,9 @@ syncop_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
         args->op_ret   = op_ret;
         args->op_errno = op_errno;
 
+	if (buf)
+		args->iatt1 = *buf;
+
         __wake (args);
 
         return 0;
@@ -1438,7 +1443,7 @@ syncop_create_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 int
 syncop_create (xlator_t *subvol, loc_t *loc, int32_t flags, mode_t mode,
-               fd_t *fd, dict_t *xdata)
+               fd_t *fd, dict_t *xdata, struct iatt *iatt)
 {
         struct syncargs args = {0, };
 
@@ -1446,6 +1451,9 @@ syncop_create (xlator_t *subvol, loc_t *loc, int32_t flags, mode_t mode,
                 loc, flags, mode, 0, fd, xdata);
 
         errno = args.op_errno;
+	if (iatt)
+		*iatt = args.iatt1;
+
         return args.op_ret;
 
 }
@@ -1742,6 +1750,8 @@ syncop_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         args->op_ret   = op_ret;
         args->op_errno = op_errno;
+	if (buf)
+		args->iatt1 = *buf;
 
         __wake (args);
 
@@ -1749,7 +1759,8 @@ syncop_symlink_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 }
 
 int
-syncop_symlink (xlator_t *subvol, loc_t *loc, const char *newpath, dict_t *dict)
+syncop_symlink (xlator_t *subvol, loc_t *loc, const char *newpath, dict_t *dict,
+		struct iatt *iatt)
 {
         struct syncargs args = {0, };
 
@@ -1757,6 +1768,9 @@ syncop_symlink (xlator_t *subvol, loc_t *loc, const char *newpath, dict_t *dict)
                 newpath, loc, 0, dict);
 
         errno = args.op_errno;
+	if (iatt)
+		*iatt = args.iatt1;
+
         return args.op_ret;
 
 }
@@ -1810,6 +1824,9 @@ syncop_mknod_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
         args->op_ret   = op_ret;
         args->op_errno = op_errno;
 
+	if (buf)
+		args->iatt1 = *buf;
+
         __wake (args);
 
         return 0;
@@ -1817,7 +1834,7 @@ syncop_mknod_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 int
 syncop_mknod (xlator_t *subvol, loc_t *loc, mode_t mode, dev_t rdev,
-              dict_t *dict)
+              dict_t *dict, struct iatt *iatt)
 {
         struct syncargs args = {0, };
 
@@ -1825,6 +1842,9 @@ syncop_mknod (xlator_t *subvol, loc_t *loc, mode_t mode, dev_t rdev,
                 loc, mode, rdev, 0, dict);
 
         errno = args.op_errno;
+	if (iatt)
+		*iatt = args.iatt1;
+
         return args.op_ret;
 
 }
@@ -1842,6 +1862,8 @@ syncop_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         args->op_ret   = op_ret;
         args->op_errno = op_errno;
+	if (buf)
+		args->iatt1 = *buf;
 
         __wake (args);
 
@@ -1850,7 +1872,8 @@ syncop_mkdir_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
 
 int
-syncop_mkdir (xlator_t *subvol, loc_t *loc, mode_t mode, dict_t *dict)
+syncop_mkdir (xlator_t *subvol, loc_t *loc, mode_t mode, dict_t *dict,
+	      struct iatt *iatt)
 {
         struct syncargs args = {0, };
 
@@ -1858,6 +1881,9 @@ syncop_mkdir (xlator_t *subvol, loc_t *loc, mode_t mode, dict_t *dict)
                 loc, mode, 0, dict);
 
         errno = args.op_errno;
+	if (iatt)
+		*iatt = args.iatt1;
+
         return args.op_ret;
 
 }
@@ -1886,5 +1912,39 @@ syncop_access (xlator_t *subvol, loc_t *loc, int32_t mask)
                 loc, mask, NULL);
 
         errno = args.op_errno;
+        return args.op_ret;
+}
+
+
+int
+syncop_lk_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
+	       int op_ret, int op_errno, struct gf_flock *flock,
+	       dict_t *xdata)
+{
+        struct syncargs *args = NULL;
+
+        args = cookie;
+
+        args->op_ret   = op_ret;
+        args->op_errno = op_errno;
+	if (flock)
+		args->flock = *flock;
+        __wake (args);
+
+        return 0;
+}
+
+
+int
+syncop_lk (xlator_t *subvol, fd_t *fd, int cmd, struct gf_flock *flock)
+{
+        struct syncargs args = {0, };
+
+        SYNCOP (subvol, (&args), syncop_lk_cbk, subvol->fops->lk,
+                fd, cmd, flock, NULL);
+
+        errno = args.op_errno;
+	*flock = args.flock;
+
         return args.op_ret;
 }

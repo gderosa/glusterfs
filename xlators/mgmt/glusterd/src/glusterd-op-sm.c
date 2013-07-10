@@ -105,6 +105,8 @@ static char *glusterd_op_sm_event_names[] = {
         "GD_OP_EVENT_INVALID"
 };
 
+extern struct volopt_map_entry glusterd_volopt_map[];
+
 char*
 glusterd_op_sm_state_name_get (int state)
 {
@@ -401,7 +403,8 @@ glusterd_op_stage_set_volume (dict_t *dict, char **op_errstr)
         uint32_t                        local_key_op_version    = 0;
         gf_boolean_t                    origin_glusterd         = _gf_true;
         gf_boolean_t                    check_op_version        = _gf_true;
-        gf_boolean_t                    all_vol        = _gf_false;
+        gf_boolean_t                    all_vol                 = _gf_false;
+        struct volopt_map_entry         *vme                    = NULL;
 
         GF_ASSERT (dict);
         this = THIS;
@@ -558,6 +561,18 @@ glusterd_op_stage_set_volume (dict_t *dict, char **op_errstr)
 
                 if (is_key_glusterd_hooks_friendly (key))
                         continue;
+
+                for (vme = &glusterd_volopt_map[0]; vme->key; vme++) {
+                        if ((vme->validate_fn) &&
+                            ((!strcmp (key, vme->key)) ||
+                             (!strcmp (key, strchr (vme->key, '.') + 1)))) {
+                                ret = vme->validate_fn (dict, key, value,
+                                                        op_errstr);
+                                if (ret)
+                                        goto out;
+                                break;
+                        }
+                }
 
                 exists = glusterd_check_option_exists (key, &key_fixed);
                 if (exists == -1) {
@@ -1313,6 +1328,8 @@ glusterd_op_reset_volume (dict_t *dict, char **op_errstr)
                             key);
         }
 
+        gd_update_volume_op_versions (volinfo);
+
 out:
         GF_FREE (key_fixed);
         if (quorum_action)
@@ -1495,6 +1512,7 @@ glusterd_op_set_volume (dict_t *dict)
                 goto out;
         }
 
+        // TODO: Remove this once v3.3 compatability is not required
         check_op_version = dict_get_str_boolean (dict, "check-op-version",
                                                  _gf_false);
 
@@ -1601,6 +1619,19 @@ glusterd_op_set_volume (dict_t *dict)
                 goto out;
         }
 
+        /* Update the cluster op-version before regenerating volfiles so that
+         * correct volfiles are generated
+         */
+        if (new_op_version > priv->op_version) {
+                priv->op_version = new_op_version;
+                ret = glusterd_store_global_info (this);
+                if (ret) {
+                        gf_log (this->name, GF_LOG_ERROR,
+                                "Failed to store op-version");
+                        goto out;
+                }
+        }
+
         if (!global_opt) {
                 ret = glusterd_create_volfiles_and_notify_services (volinfo);
                 if (ret) {
@@ -1623,6 +1654,7 @@ glusterd_op_set_volume (dict_t *dict)
                                 goto out;
                         }
                 }
+                gd_update_volume_op_versions (volinfo);
 
         } else {
                 list_for_each_entry (voliter, &priv->volumes, vol_list) {
@@ -1649,16 +1681,7 @@ glusterd_op_set_volume (dict_t *dict)
                                         goto out;
                                 }
                         }
-                }
-        }
-
-        if (new_op_version > priv->op_version) {
-                priv->op_version = new_op_version;
-                ret = glusterd_store_global_info (this);
-                if (ret) {
-                        gf_log (this->name, GF_LOG_ERROR,
-                                "Failed to store op-version");
-                        goto out;
+                        gd_update_volume_op_versions (volinfo);
                 }
         }
 

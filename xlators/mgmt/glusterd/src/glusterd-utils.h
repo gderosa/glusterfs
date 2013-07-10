@@ -117,6 +117,9 @@ glusterd_peer_hostname_new (char *hostname, glusterd_peer_hostname_t **name);
 int32_t
 glusterd_volinfo_find (char *volname, glusterd_volinfo_t **volinfo);
 
+int
+glusterd_volinfo_find_by_volume_id (uuid_t volume_id, glusterd_volinfo_t **volinfo);
+
 int32_t
 glusterd_service_stop(const char *service, char *pidfile, int sig,
                       gf_boolean_t force_kill);
@@ -426,6 +429,9 @@ glusterd_add_node_to_dict (char *server, dict_t *dict, int count,
 char *
 glusterd_uuid_to_hostname (uuid_t uuid);
 
+int
+glusterd_get_dist_leaf_count (glusterd_volinfo_t *volinfo);
+
 glusterd_brickinfo_t*
 glusterd_get_brickinfo_by_position (glusterd_volinfo_t *volinfo, uint32_t pos);
 
@@ -514,4 +520,7 @@ glusterd_copy_uuid_to_dict (uuid_t uuid, dict_t *dict, char *key);
 
 gf_boolean_t
 glusterd_is_same_address (char *name1, char *name2);
+
+void
+gd_update_volume_op_versions (glusterd_volinfo_t *volinfo);
 #endif
